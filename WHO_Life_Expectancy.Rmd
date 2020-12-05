@@ -1,0 +1,544 @@
+---
+output:
+  html_document: default
+  pdf_document: default
+---
+#Understanding the key factors affecting the Life Expectancy of Countries#
+
+**In this R task, we are going to use data from the world health organization to answer some important questions related to Life Expectancy, which are given below -**
+
++ Q1 - Does various predicting factors which has been chosen initially really affect the Life expectancy? Are are the predicting variables actually affecting the life expectancy?
++ Q2 - Should a country having a lower life expectancy value(<65) increase its healthcare expenditure in order to improve its average lifespan?
++ Q3 - How does Infant and Adult mortality rates affect life expectancy?
++ Q4 - What is the impact of schooling on the lifespan of humans?
++ Q5 - Does Life Expectancy have positive or negative relationship with drinking alcohol?
++ Q6 - Do densely populated countries tend to have lower life expectancy?
++ Q7 - What is the impact of Immunization coverage on life Expectancy?
+
+
+###Importing the dataset to use###
+```{r}
+data = read.csv('WHO.csv')
+attach(data)
+```
+
+###Understanding the data structure###
+```{r}
+library(tidyr)
+library(dplyr)
+head(data)
+ncol(data)
+nrow(data)
+colnames(data)
+```
+
+###Data Cleaning###
+```{r}
+str(data)
+```
+From looking at the structure of the dataset we can conclude that some columns don't have the correct datatypes. The variables country and status should be categorical / factors rather than strings. And the year should be a factor too rather than an integer.
+
+
+```{r}
+data$Country <- as.factor(data$Country)
+data$Status <- as.factor(data$Status)
+data$Year <- as.factor(as.character(data$Year))
+```
+
+
+```{r}
+str(data)
+```
+
+The datatypes of Country , Year and Status have been changed. However, lets check if the numbers of unique factors in each variable matches what the str() shows
+
+```{r}
+for(i in c('Country','Status','Year')){
+  print(c(unique(data[i]))) 
+}
+```
+
+We can conclude that we have the same number of unique values as stated by the str function and the categories are not ambiguous.
+
+```{r}
+nrow(data[!complete.cases(data),])
+```
+
+40 % of the rows in our dataset have missing values, which makes our dataset very unusable at the moment. Lets check which variables in our dataset have missing values.
+
+```{r}
+na_columns <- c()
+for(i in colnames(data)){
+  if(nrow(data[!complete.cases(data[i]),])>0){
+    print(paste(i,'has',nrow(data[!complete.cases(data[i]),]),'missing values'))
+    na_columns <- append(na_columns,i)
+  }
+}
+length(na_columns)
+```
+On the whole, we have 14 columns out of the 22 in our dataset which have missing values. That requires a lot of cleaning
+
+We are going to look at how much % of these 14 columns is filled with na
+```{r}
+round((colSums(is.na(data[na_columns])) / colSums(count(data[na_columns]))),3) 
+colSums(count(data[na_columns]))
+```
+From the above, we can conclude that are HepatitisB, GDP and Population have between 400-700 missing values each.  
+
+However, based on our important study questions, we cannot afford to remove the columns of population and HepatitisB. However, we can remove columns such as thinness5.9 years, thinness1.19 years and IncomeComposition since they aren't seemingly very important to our study based on the questions to answer
+```{r}
+data_backup <- data
+data <- select(data,-c(Incomecompositionofresources,thinness5.9years,thinness1.19years))
+
+na_columns <- c()
+for(i in colnames(data)){
+  if(nrow(data[!complete.cases(data[i]),])>0){
+    print(paste(i,'has',nrow(data[!complete.cases(data[i]),]),'missing values'))
+    na_columns <- append(na_columns,i)
+  }
+}
+length(na_columns)
+
+countries_to_remove <- data[which(data$Status == 'Developing' & is.na(data$Lifeexpectancy)==TRUE),'Country']
+countries_to_remove
+```
+
+On scrutinising the aforementioned countries in the dataset, it is found that above countries only have one record for the year of 2013. They haven't been recorded in any other year. Furthermore, they contain missing values in Life expectancy, adult mortality and even in population, which are important variables in our study. Hence these values are being removed from the study.
+```{r}
+for(i in countries_to_remove){
+  data <- data[which(data$Country != i),]
+}
+
+na_columns <- c()
+for(i in colnames(data)){
+  if(nrow(data[!complete.cases(data[i]),])>0){
+    print(paste(i,'has',nrow(data[!complete.cases(data[i]),]),'missing values'))
+    na_columns <- append(na_columns,i)
+  }
+}
+length(na_columns)
+
+colSums(is.na(data[na_columns]))
+```
+
+So now we are down to 9 columns with missing values
+
+**Next we will look at the Polio column -**
+```{r}
+data[!complete.cases(data$Polio),c('Country','Status','Year','Polio')]
+```
+
+From the view, we can also see that the 19 missing diptheria cases also belong to the same instances of the missing polio values. Hence we will treat them both.
+We have three countries in this problem and belong to different years. Hence we will treat each country individually.
+
+```{r}
+data[!complete.cases(data$Diphtheria),c("Country",'Year',"Polio","Diphtheria")]
+```
+
+Montenegro's Dipththeria and Polio missing instances will be filled using its following median year rates ( due to a couple of unusual values)
+
+```{r}
+data[which(data$Country == 'Montenegro'),'Polio'][-1:-10] <- median(data[which(data$Country == 'Montenegro'),'Polio'][-11:-16])
+```
+
+```{r}
+data[which(data$Country == 'Montenegro'),'Diphtheria'][-1:-10] <- median(data[which(data$Country == 'Montenegro'),'Diphtheria'][-11:-16])
+```
+
+Now we will solve south sudan cases
+data[which(data$Country == 'SouthSudan'),c("Polio","Diphtheria")]
+
+Untill 2010 south sudan and sudan were 1 country. Hence, we can use the polio and diphtheria values of Sudan for south south sudan
+```{r}
+data[which(data$Country == 'SouthSudan'),'Polio'][6:16] <- data[which(data$Country == 'Sudan'),"Polio"][6:16]
+data[which(data$Country == 'SouthSudan'),'Diphtheria'][6:16] <- data[which(data$Country == 'Sudan'),"Diphtheria"][6:16]
+```
+Now we will look at Timor-Leste
+```{r}
+mean(data[which(data$Country=='Timor-Leste'),'Polio'][13:16],na.rm = TRUE)
+```
+It can be seen that there is a stready rise in immunization for diphtheria and polio from the year 2002. If we were to fill the missing values wih median or mean values, it wouldn't be right as the figures would be larger than what it could have been. Instead we will simply copy the 2002 values for 2001 and 2000.
+
+```{r}
+data[which(data$Country == 'Timor-Leste'),'Polio'][15:16] <- data[which(data$Country == 'Timor-Leste'),"Polio"][14]
+data[which(data$Country == 'Timor-Leste'),'Diphtheria'][15:16] <- data[which(data$Country == 'Timor-Leste'),"Diphtheria"][14]
+```
+
+*Lets look at the remaining columns*
+```{r}
+na_columns <- c()
+for(i in colnames(data)){
+  if(nrow(data[!complete.cases(data[i]),])>0){
+    print(paste(i,'has',nrow(data[!complete.cases(data[i]),]),'missing values'))
+    na_columns <- append(na_columns,i)
+  }
+}
+```
+
+**Now we look at incomplete cases for BMI - **
+```{r}
+data[!complete.cases(data$BMI),c("Country","Year","Status","BMI")]
+```
+From the data, we these missing instances are for Sudan and South Sudan. These countries have never probably had BMI measurements taken, hence BMI data is unavailble
+```{r}
+hist(data[which(data$Status == 'Developing'),'BMI'],main = 'Distribution of BMI values',xlab = 'BMI values')
+```
+
+We can see that the distribution of the BMI taken for developing countries follows a bimodal distribution. Taking a median of this kind of distribution doesn't seem right.
+
+```{r}
+median(data[which(data$Status == 'Developing'),'BMI'],na.rm = TRUE)
+```
+
+According to world data.com, Sudan male has an average bmi of 23.3 while females have an average bmi of 26. The average of these figures i.e  24.6 is what we will use. Since Sudan and South Sudan were the same country till 2010 and due to unavailability of data and uncertainity of data, we will use the same figure for both sudan and south sudan
+```{r}
+data[which(data$Country == 'SouthSudan' | data$Country == 'Sudan'),'BMI'] <- 24.6
+```
+*Lets look at the remaining columns*
+
+```{r}
+na_columns <- c()
+for(i in colnames(data)){
+  if(nrow(data[!complete.cases(data[i]),])>0){
+    print(paste(i,'has',nrow(data[!complete.cases(data[i]),]),'missing values'))
+    na_columns <- append(na_columns,i)
+  }
+}
+```
+
+*Now we have 6 columns which large number of missing instances*,
+**First we will solve for alcohol**
+```{r}
+data[!complete.cases(data$Alcohol),c("Country","Status","Year","Alcohol")]
+```
+
+It appears as though the recording for alcohol consumption haven't been taken for 2015. Hence it can be solved by taking the average of alcohol consumption of each country from 2000-14.
+```{r}
+for(i in unique(data$Country)){
+  print(paste(i,':',median(data[which(data$Country == i),"Alcohol"],na.rm = TRUE)))
+}
+
+hist(data[complete.cases(data$Alcohol),"Alcohol"],main = 'Distribution of Alcohol',xlab = 'Per Capita Alcohol Consumption in Litre')
+
+for(i in unique(data$Country)){
+  data[which(data$Country == i & data$Year == '2015'),'Alcohol' ] = median(data[which(data$Country == i),"Alcohol"],na.rm = TRUE)
+}
+
+data[!complete.cases(data$Alcohol),c("Country","Status","Year","Alcohol")]
+```
+
+We need to replace the missing values of South Sudan and Montenegro
+
+```{r}
+data[which(data$Country == 'SouthSudan'),'Alcohol' ] = median(data[which(data$Country == 'Sudan'),'Alcohol' ],na.rm = TRUE)
+data[which(data$Country == 'SouthSudan'),'Alcohol' ] = median(data[which(data$Country == 'Sudan'),'Alcohol' ],na.rm = TRUE)
+
+data[which(data$Country == 'Montenegro' & is.na(data$Alcohol)),'Alcohol' ] = median(data[which(data$Country == 'Montenegro'),'Alcohol'],na.rm = TRUE)
+```
+
+*Lets look at the remaining columns*
+```{r}
+na_columns <- c()
+for(i in colnames(data)){
+  if(nrow(data[!complete.cases(data[i]),])>0){
+    print(paste(i,'has',nrow(data[!complete.cases(data[i]),]),'missing values'))
+    na_columns <- append(na_columns,i)
+  }
+}
+```
+
+**Now we move to the schooling column**
+```{r}
+data[!complete.cases(data$Schooling),c("Country","Year","Status","Schooling")]
+```
+Now with several countries not having any schooling values for any years, we are going to try to assign them values based on their status and year. First we will need to check if the schooling data for developed and developing nations is normal so that we can take average across all other nations for a given year.
+
+```{r}
+for(i in unique(data$Year)){
+    print(paste("Year :",i,"- p value :",shapiro.test(data[which(data$Status == 'Developed' & data$Year == i),'Schooling'])[2]))
+}
+```
+From the above test, we have found that the schooling data for developed nations is normal for all given years. Hence we can take an average of schooling data for a given year and asssign it to developed nations with schooling values.
+
+```{r}
+for(i in unique(data$Year)){
+  print(paste("Year :",i,"- p value :",shapiro.test(data[which(data$Status == 'Developing' & data$Year == i),'Schooling'])[2]))
+}
+```
+From the above test for developing nations, we found that the schooling mean overs the years is significantly different from a normal distribution. Therefore we would use median to fill the values
+
+```{r}
+for(i in unique(data$Year)){
+  data[which(data$Status == 'Developed' & data$Year == i & is.na(data$Schooling)),'Schooling'] = mean(data[which(data$Status == 'Developed' & data$Year == i ),"Schooling"],na.rm = TRUE)
+  data[which(data$Status == 'Developing' & data$Year == i & is.na(data$Schooling)),'Schooling'] = median(data[which(data$Status == 'Developing' & data$Year == i ),"Schooling"],na.rm = TRUE)
+}
+```
+*Lets look at the remaining columns*
+```{r}  
+na_columns <- c()
+for(i in colnames(data)){
+  if(nrow(data[!complete.cases(data[i]),])>0){
+    print(paste(i,'has',nrow(data[!complete.cases(data[i]),]),'missing values'))
+    na_columns <- append(na_columns,i)
+  }
+}
+```
+**Now we will look at GDP**
+```{r}
+data[!complete.cases(data$GDP),c("Country","Status","Year","GDP")]
+```
+
+We can see that we have a couple of countries that do not have any GDP values provided. Most of these countries are developing countries. We will try to apply the same method that we used for filling the missing values
+
+```{r}
+hist(data[which(data$Status == 'Developed' & !is.na(data$GDP)),"GDP"],main = 'Distribution of GDP Values for Developed Countries',xlab = 'GDP')
+hist(data[which(data$Status == 'Developing' & data$Year=="2015" &!is.na(data$GDP)),"GDP"],main = 'Distribution of GDP Values for Developed Countries',xlab = 'GDP')
+```
+
+On the whole, we can see that our GDP values for developed and developing countries do not follow a normal distribution. Hence if we wish to fill these values, we need to use the median. However, we will check the GDP for these countries year wise to check if we still get a non-normal distribution
+```{r}
+for(i in unique(data$Year)){
+  print(paste("Year :",i,"- p value :",shapiro.test(data[which(data$Status == 'Developed' & data$Year == i),'GDP'])[2]))
+}
+```
+According to the tests done on the GPD of developed countries for different years, the distribution of gdp values is not normal. Hence, we will use median as our central measure of tendency.
+```{r}
+for(i in unique(data$Year)){
+  print(paste("Year :",i,"- p value :",shapiro.test(data[which(data$Status == 'Developing' & data$Year == i),'GDP'])[2]))
+}
+```
+
+According to the tests done on the GPD of developing countries for different years, the distribution of gdp values is not normal. Hence, we will use median as our central measure of tendency.
+
+```{r}
+for(i in unique(data$Year)){
+  data[which(data$Status == 'Developed' & data$Year == i & is.na(data$GDP)),'GDP'] = median(data[which(data$Status == 'Developed' & data$Year == i),'GDP'],na.rm = TRUE)
+  data[which(data$Status == 'Developing' & data$Year == i & is.na(data$GDP)),'GDP'] = median(data[which(data$Status == 'Developing' & data$Year == i),'GDP'],na.rm = TRUE)
+}
+```
+*Lets look at the remaining columns*
+```{r}
+na_columns <- c()
+for(i in colnames(data)){
+  if(nrow(data[!complete.cases(data[i]),])>0){
+    print(paste(i,'has',nrow(data[!complete.cases(data[i]),]),'missing values'))
+    na_columns <- append(na_columns,i)
+  }
+}
+```
+
+**Now we will look at Total Expenditure**
+```{r}
+data[!complete.cases(data$Totalexpenditure),c("Country","Status","Year","Totalexpenditure")]
+```
+We can see that the predominant share of missing values relate to the year 2015.
+```{r}
+median(data[which(data$Country == 'UnitedStatesofAmerica'),'Totalexpenditure'],na.rm = TRUE)
+```
+
+```{r}
+countries_to_seperate <- c("DemocraticPeople'sRepublicofKorea",'Iraq','Somalia')
+countries_to_seperate
+
+hist(data[which(data$Status == 'Developed'),'Totalexpenditure'],main = 'Distribution of Total Expenditure Values for Developed Countries',xlab = 'Total Expenditure on Healthcare')
+hist(data[which(data$Status == 'Developing'),'Totalexpenditure'],main = 'Distribution of Total Expenditure Values for Developed Countries',xlab = 'Total Expenditure on Healthcare')
+
+summary(data[which(data$Status == 'Developed'),'Totalexpenditure'])
+summary(data[which(data$Status == 'Developing'),'Totalexpenditure'])
+
+for(i in unique(data[which(data$Status == 'Developed'& data$Country != "DemocraticPeople'sRepublicofKorea" & data$Country != "Iraq"& data$Country != "Somalia"& data$Country != "SouthSudan"),'Country'])){
+  print(paste("Country :",i,"- p value :",shapiro.test(data[which(data$Country == i & data$Status == 'Developed'),'Totalexpenditure'])[2]))
+}
+```
+
+According to the tests done on the total expenditure of developed countries for different years, majority of the expenditures indicate normal. Hence, we will use mean as our central measure of tendency.
+
+```{r}
+for(i in unique(data[which(data$Status == 'Developing'& data$Country != "DemocraticPeople'sRepublicofKorea" & data$Country != "Iraq"& data$Country != "Somalia"& data$Country != "SouthSudan"),'Country'])){
+  print(paste("Country :",i,"- p value :",shapiro.test(data[which(data$Country == i),'Totalexpenditure'])[2]))
+}
+```
+
+According to the tests done on the total expenditure of developing countries for different years, majority of the expenditures values are normal. Hence, we will use mean as our central measure of tendency.
+
+Before proceeding, we will first sort out the instances for SouthSudan
+```{r}
+data[which(data$Country == 'SouthSudan'),'Totalexpenditure'][5:16] <- data[which(data$Country == 'Sudan'),'Totalexpenditure'][5:16]
+
+for(i in unique(data[which(data$Status == 'Developed'& data$Country != "DemocraticPeople'sRepublicofKorea" & data$Country != "Iraq"& data$Country != "Somalia"& data$Country != "SouthSudan"),'Country'])){
+  data[which(data$Country == i & data$Year == "2015"),'Totalexpenditure'] <- mean(data[which(data$Country == i),'Totalexpenditure'],na.rm = TRUE)
+
+}
+
+
+for(i in unique(data[which(data$Status == 'Developing'& data$Country != "DemocraticPeople'sRepublicofKorea" & data$Country != "Iraq"& data$Country != "Somalia"),'Country'])){
+  data[which(data$Country == i & data$Year == "2015"),'Totalexpenditure'] <- mean(data[which(data$Country == i),'Totalexpenditure'],na.rm = TRUE)
+  
+}
+
+data[!complete.cases(data$Totalexpenditure),c("Country","Status","Year","Totalexpenditure")]
+```
+
+*Lets look at the remaining columns*
+
+```{r}
+for(i in colnames(data)){
+  if(nrow(data[!complete.cases(data[i]),])>0){
+    print(paste(i,'has',nrow(data[!complete.cases(data[i]),]),'missing values'))
+  }
+}
+```
+
+```{r}
+data[which(data$Country=='Iraq'),'Totalexpenditure'][14:16] <- mean(data[which(data$Country=='Iraq'),'Totalexpenditure'],na.rm = TRUE)
+data[which(data$Country=='Iraq'),'Totalexpenditure'][1] <- mean(data[which(data$Country=='Iraq'),'Totalexpenditure'][1:5],na.rm = TRUE)
+
+for(i in unique(data$Year)){
+data[which(data$Year == i & is.na(data$Totalexpenditure)),"Totalexpenditure"] <- mean(data[which(data$Status == 'Developing' & data$Year == i),"Totalexpenditure"],na.rm = TRUE)
+}
+```
+*Lets look at the remaining columns*
+```{r}
+for(i in colnames(data)){
+  if(nrow(data[!complete.cases(data[i]),])>0){
+    print(paste(i,'has',nrow(data[!complete.cases(data[i]),]),'missing values'))
+  }
+}
+```
+**We need to check the Hepatitis B immunizations column**
+```{r}
+data[!complete.cases(data$HepatitisB),c("Country","Status","Year","HepatitisB")]
+
+for(i in unique(data[!complete.cases(data$HepatitisB),"Country"])){
+  print(paste(i,'has',nrow(data[which(data$Country == i & is.na(data$HepatitisB)),]),'rows'))
+}
+
+data[which(data$Country == 'Sudan'),c("Year","HepatitisB")]
+
+data[which(data$Country == 'SouthSudan'),"HepatitisB"][5:11] <- data[which(data$Country == 'Sudan'),'Totalexpenditure'][5:11]
+
+for(i in unique(data[!complete.cases(data$HepatitisB),"Country"])){
+  print(paste(i,'has',nrow(data[which(data$Country == i & is.na(data$HepatitisB)),]),'rows'))
+}
+```
+
+We need to check the Hepatitis b immunizations across different types of nations - developed and developing
+```{r}
+hist(data[which(data$Status == 'Developed'),"HepatitisB"],main = 'HepatitisB Immunization Values for Developed Countries',xlab = '% of Population covered by Immunization')
+hist(data[which(data$Status == 'Developing'),"HepatitisB"],main = 'HepatitisB Immunization Values for Developing Countries',xlab = '% of Population covered by Immunization')
+
+summary(data[which(data$Status == 'Developed'),"HepatitisB"])
+summary(data[which(data$Status == 'Developing'),"HepatitisB"])
+```
+
+For countries with 5 or less instances of missing immunization values, will use the median values of their other years to fill.
+
+```{r}
+for(i in unique(data[!complete.cases(data$HepatitisB),"Country"])){
+  if(nrow(data[which(data$Country == i & is.na(data$HepatitisB)),]) < 6){
+    data[which(data$Country == i & is.na(data$HepatitisB)),"HepatitisB"] <- median(data[which(data$Country == i),"HepatitisB"],na.rm = TRUE)
+  }
+}
+```
+
+For countries with more than 5 instances of missing immunization values, we will use take median values of the different years for developed and developing countries.
+
+```{r}
+for(i in data[which(is.na(data$HepatitisB)),"Year"]){
+  data[which(data$Year == i & data$Status == 'Developed' &is.na(data$HepatitisB)),"HepatitisB"] <- median(data[which(data$Year==i & data$Status == 'Developed'),"HepatitisB"],na.rm = TRUE)
+  data[which(data$Year == i & data$Status == 'Developing' &is.na(data$HepatitisB)),"HepatitisB"] <- median(data[which(data$Year==i & data$Status == 'Developing'),"HepatitisB"],na.rm = TRUE)
+}
+```
+*Lets look at the remaining columns*
+```{r}
+for(i in colnames(data)){
+  if(nrow(data[!complete.cases(data[i]),])>0){
+    print(paste(i,'has',nrow(data[!complete.cases(data[i]),]),'missing values'))
+  }
+}
+```
+**the last column to correct is population**
+```{r}
+data[which(is.na(data$Population)),c('Country','Status','Year','Population')]
+
+for(i in unique(data[!complete.cases(data$Population),"Country"])){
+  print(paste(i,'has',nrow(data[which(data$Country == i & is.na(data$Population)),]),'missing population instances'))
+}
+```
+
+Population is an important variable for the analysis. Each country's population is distinct and cannot be filled using median, mean or using another calculation. Hence, we will try to fill these values manually, by searching the internet and searching for the populations of these countries. Since it would be difficult to gather population data for so many missing instances, we will only fill the missing population instances for 2015, which is the latest year in the dataset.
+```{r}
+Population_2015 <- c(93566,353658,1234571,276300,10426154,414400,21570746,76244532,11241161,10506813,25183832,76244544,83483000,5223994,1750732,109553,79109272,3566437,5418300,6230200,6545619,2052722,102624,4367800,2773479,1699435,3758678,174000,109284,27136977,5076700,5424925,2046976,9358602,8264070,64715810,51482637,321418820,28833845,91508084,23153982)
+
+data[which(data$Year == "2015" & is.na(data$Population)),'Population'] <- Population_2015
+```
+
+###Answering the Given Questions###
+Now that we have finished cleaning the data and removing missing instances as much as possible, its time to answer the important questions. We will answer these quetions using data only for the year 2015.
+
+```{r}
+library(ggplot2)
+```
+
+**Q1 - Does various predicting factors which has been chosen initially really affect the Life expectancy? What are the predicting variables actually affecting the life expectancy?**
+
+This is a question that we would try to answer towards the end of the analysis.
+
+**Q2 - Should a country having a lower life expectancy value(<65) increase its healthcare expenditure in order to improve its average lifespan?**
+```{r}
+ggplot(data=data[which(data$Year == '2015'),],aes(y= Lifeexpectancy, x = Totalexpenditure)) + geom_point(aes(color = Status))+ labs(title ='Expenditure on Healthcare vs Life Expectancy',x = '% of Total Government Expenditure on Healthcare', y= 'Average Life Expectancy') + theme(plot.title = element_text(size = 16,hjust = 0.5,face = 'bold.italic'),axis.text = element_text(size = 10,face = 'bold',colour = 'darkgrey'),axis.title.x = element_text(size = 12,face = 'bold'),axis.title.y = element_text(size = 12,face = 'bold'),legend.title.align = 0.5)
+```
+
+Based on the scatterplot, we can state that there is no apparent postive relation between total healthcare expenditure and life expectancy. A dominant share of Countries with high life expectancy are channeling the same % of the government expenditure towards healthcare as the countries with life expectancy lower than 65. Hence, we can state that life expectancy has more to do than just with healthcare expenditure. We can also see that most of the developed countries with life expectancy above 70 spend on healthcare almost similar to developing nations with lower life expectancy.
+
+**Q3 - How does Infant and Adult mortality rates affect life expectancy?**
+```{r}
+ggplot(data=data[which(data$Year == '2015'),],aes(y= AdultMortality, x = infantdeaths)) + geom_point(aes(fill = Lifeexpectancy),size = 5,pch = 21,alpha = 0.7,colour = "black")+ labs(title ="Impact of Infant/Adult mortality rates on life expectancy",x = 'Infants deaths per 1000', y= 'Adult deaths between 15-60 per 1000') + theme(plot.title = element_text(size = 16,hjust = 0.5,face = 'bold.italic'),axis.text = element_text(size = 10,face = 'bold',colour = 'darkgrey'),axis.title.x = element_text(size = 12,face = 'bold'),axis.title.y = element_text(size = 12,face = 'bold'),legend.title.align = 0.5)+scale_fill_continuous(name = 'Life Expectancy') 
+```
+
+From the scatterplot, firstly we can conclude that, as of 2015, most countries usually record exceptionally low infant death rates. Very few countries have gone past 100 deaths, which may need to be investigated. However, the adult deaths vary. Back to question, we can state that countries with a very low infants deaths and adult deaths below 150 seem to have an average life expectancy of above 75. Hence, the main target should be looking after the health of the adults in the country as lower adult deaths will significantly improve the life expectancy.
+
+**Q4 - Does Life Expectancy have positive or negative relationship with drinking alcohol?**
+```{r}
+ggplot(data=data[which(data$Year == '2015'),],aes(x= Alcohol, y = Lifeexpectancy)) + geom_point(aes(fill = Status),size = 5,pch = 21,alpha = 0.7,colour = "black")+ labs(title ="Relationship of Alcohol Consumption and Life Expectancy",y = 'Life Expectancy', x= 'Alcohol per Capita Consumption ( in litre )') + theme(plot.title = element_text(size = 16,hjust = 0.5,face = 'bold.italic'),axis.text = element_text(size = 10,face = 'bold',colour = 'darkgrey'),axis.title.x = element_text(size = 12,face = 'bold'),axis.title.y = element_text(size = 12,face = 'bold')) + geom_smooth(method = 'lm')
+```
+
+From the scatterplot, it seams that life expectancy has a moderately strong postive correlation with alcohol consumption. The higher the per capita consumption of alcohol, the higher the life expectancy. However, not all points in the plot seem  to indicate that. There are many countries with low consumption and higher life expectancy. However, when we try to analyse using the status of the country, it appears as the all the points with very high consumption and high lief expectancy are related to developed countries. It's not necessary that alcohol consumption could lead to improved life expectancy. There could be other factors in a country that could affect the life span. Correlation doesn't always imply causation.    
+
+**Q5 -  What is the impact of schooling on the lifespan of humans?**
+```{r}
+ggplot(data=data[which(data$Year == '2015'),],aes(x = Schooling, y = Lifeexpectancy)) + geom_point(aes(fill = Status),size = 5,pch = 21,alpha = 0.7,colour = "black")+ labs(title = "Impact of schooling on the lifespan of humans",y = 'Life Expectancy', x= 'Number of Years of Schooling') + theme(plot.title = element_text(size = 16,hjust = 0.5,face = 'bold.italic'),axis.text = element_text(size = 10,face = 'bold',colour = 'darkgrey'),axis.title.x = element_text(size = 12,face = 'bold'),axis.title.y = element_text(size = 12,face = 'bold')) + geom_smooth(method = 'lm')
+```
+
+From the scatter plot, we can catch a clear and a very strong positive correlation between Numbers of Years of Schooliing and Life Expectancy. Countries where people get more years of schooling record very high life expectancy. Hence, we can definitely consider schooling as an important predictor.
+
+**Q6 -  Do densely populated countries tend to have lower life expectancy?**
+```{r}
+ggplot(data=data[which(data$Year == '2015'),],aes(x = Population, y = Lifeexpectancy)) + geom_point(aes(fill = Status),size = 5,pch = 21,alpha = 0.7,colour = "black")+ labs(title = "Relationship between Population and Life Expectancy" ,y = 'Life Expectancy', x= 'Population') + theme(plot.title = element_text(size = 16,hjust = 0.5,face = 'bold.italic'),axis.text = element_text(size = 10,face = 'bold',colour = 'darkgrey'),axis.title.x = element_text(size = 12,face = 'bold'),axis.title.y = element_text(size = 12,face = 'bold')) + geom_smooth(method = 'lm')
+```
+
+From the scatterplot, we can conclude that there is no apparent correlation between population and life expectancy. There are many densely populated countries with high life expectancy and low life expectancy. There are cases of countries with extremely large populations and high and low life expectancy. However, on mapping status of countires, it also be seen that even developed countries with large populations, similiar to those of developing countries, have very high life expectancy. Hence, we can state that simply having a large population can't be a reason for having lower life expectancy.
+
+**Q7 -  What is the impact of Immunization coverage on life Expectancy?**
+```{r}
+ggplot(data=data[which(data$Year == '2015'),],aes(x = HepatitisB, y = Diphtheria)) + geom_point(aes(size = Polio,fill = Lifeexpectancy),pch = 21,alpha = 0.7,colour = "black")+ labs(title = "Impact of Immunization coverage on life Expectancy" ,y = "% of Population covered by HepatitisB Immunization", x= "% of Population covered by Diphtheria immunization") + theme(plot.title = element_text(size = 16,hjust = 0.5,face = 'bold.italic'),axis.text = element_text(size = 10,face = 'bold',colour = 'darkgrey'),axis.title.x = element_text(size = 12,face = 'bold'),axis.title.y = element_text(size = 12,face = 'bold')) + geom_smooth(method = 'lm') + scale_fill_continuous(name = 'Life Expectancy') + guides(size = guide_legend('Polio Immunization'))
+```
+
+From the scatterplot, we can see that there is a very positive relationship between immunization rates and Life expectancy. Countries which are working hard on providing immunization against diseases like HepatitisB, Diphtheria and Polion to large share of their population record very high life expectancies. Therefore, Immunization does a play a crucial role in determining the life expectancy of a country.
+
+**Getting back to our first question**
+**Q1 - Does various predicting factors which has been chosen initially really affect the Life expectancy? What are the predicting variables actually affecting the life expectancy?**
+```{r}
+model = lm(Lifeexpectancy~AdultMortality+infantdeaths+Alcohol+Totalexpenditure+HepatitisB+Measles+BMI+under.fivedeaths+Polio+Totalexpenditure+Diphtheria+HIV.AIDS+GDP+Population+Schooling,data = data[which(data$Year == "2015"),])
+summary(model)
+```
+From the regression model's summary, we can infer the various predicting factors initially chosen were able to explain about 84 % of variations in life expectancy points and were actually key influencers of the life expectancy.
+
+However, based on the insights that we derived from answering the important questions, lets use the variables of Schooling, HepatitisB , Diphtheria, Polio and Adult Mortality for understanding the relationship with life expectancy.
+```{r}
+model1 = lm(Lifeexpectancy~Schooling + HepatitisB + Diphtheria + Polio + AdultMortality,data = data[which(data$Year == "2015"),] )
+summary(model1)
+```
+From the new model, we have achieved a multiple R square and Adjusted R square (0.8237 and 0.8188 respectively) which is slighlty lower but almost similiar to that of the model that used all predicting variables in dataset i.e (0.8438 and 0.8308 respectively). The new model can explain around 82% of the variation in life expectancy while the model using all variables in the datset could explain around 84 % variation in the study. Hence, we can conclude by saying that Schooling, Immunization and Controlling Adult Deaths are the absolutely crucial factors affecting Life Expectancy. Other factors like expenditure on healthcare, BMI, Status of Country, Population, etc do have an positive impact on life expectancy but not by a significant margin.
+
+**Therefore, a suggestion that could be given to countries, especially developing ones, to improve life expectancy would be to initially work on providing schooling to all children, immunization against harmful diseases and taking care of the health of adults.**
